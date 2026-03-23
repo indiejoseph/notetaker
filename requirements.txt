@@ -1,0 +1,9 @@
+gradio
+livekit-agents
+livekit-plugins-silero
+livekit-plugins-openai
+openai
+dashscope
+python-dotenv
+numpy
+scipy
