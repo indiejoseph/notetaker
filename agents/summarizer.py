@@ -14,9 +14,9 @@ class SummarizerAgent:
     def __init__(self):
         self._lock = asyncio.Lock()
         self._llm = openai.LLM(
-            model=os.environ.get("QWEN_MODEL", "qwen3-omni"),
-            api_key=os.environ.get("QWEN_API_KEY", "sk-xxx"),
-            base_url=os.environ.get("QWEN_BASE_URL", "http://localhost/v1"),
+            model=os.environ.get("QWEN_OMNI_MODEL", "qwen3-omni"),
+            api_key=os.environ.get("QWEN_OMNI_API_KEY", "sk-xxx"),
+            base_url=os.environ.get("QWEN_OMNI_BASE_URL", "http://localhost/v1"),
         )
         self.instructions = (
             "You are a Summarizer Agent. Provide a concise, highly readable summary "

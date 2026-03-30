@@ -14,9 +14,9 @@ class EntityExtractorAgent:
     def __init__(self):
         self._lock = asyncio.Lock()
         self._llm = openai.LLM(
-            model=os.environ.get("QWEN_MODEL", "qwen3-omni"),
-            api_key=os.environ.get("QWEN_API_KEY", "sk-xxx"),
-            base_url=os.environ.get("QWEN_BASE_URL", "http://localhost/v1"),
+            model=os.environ.get("QWEN_OMNI_MODEL", "qwen3-omni"),
+            api_key=os.environ.get("QWEN_OMNI_API_KEY", "sk-xxx"),
+            base_url=os.environ.get("QWEN_OMNI_BASE_URL", "http://localhost/v1"),
         )
         self.instructions = (
             "Extract: People, Organizations, Locations, Dates, Key terms, Products. "
@@ -33,7 +33,7 @@ class EntityExtractorAgent:
 
             # Snapshot the count now — lines may keep arriving while the LLM call is awaited
             snapshot_len = len(state.lines)
-            transcript = state.get_transcript_snapshot()
+            transcript = state.get_transcript_snapshot(add_speaker=False)
             timestamp = state.format_timestamp(state.line_timestamps[-1])
 
             chat_ctx = llm.ChatContext()

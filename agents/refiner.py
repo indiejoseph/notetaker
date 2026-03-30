@@ -14,10 +14,10 @@ class TranscriptRefinerAgent:
 
     def __init__(self):
         self._client = AsyncOpenAI(
-            api_key=os.environ.get("QWEN_API_KEY", "sk-xxx"),
-            base_url=os.environ.get("QWEN_BASE_URL", "http://localhost/v1"),
+            api_key=os.environ.get("QWEN_OMNI_API_KEY", "sk-xxx"),
+            base_url=os.environ.get("QWEN_OMNI_BASE_URL", "http://localhost/v1"),
         )
-        self._model = os.environ.get("QWEN_MODEL", "qwen3-omni")
+        self._model = os.environ.get("QWEN_OMNI_MODEL", "qwen3-omni")
 
     async def run(self, state: TranscriptState):
         if not state.lines:
@@ -26,11 +26,15 @@ class TranscriptRefinerAgent:
         summary_context = state.get_summary_snapshot()
         entity_context = state.get_entity_snapshot()
 
-        print(f"[RefinerAgent] Refining {len(state.lines)} lines in batches of {BATCH_SIZE}...")
+        print(
+            f"[RefinerAgent] Refining {len(state.lines)} lines in batches of {BATCH_SIZE}..."
+        )
 
         for batch_start in range(0, len(state.lines), BATCH_SIZE):
             batch_lines = state.lines[batch_start : batch_start + BATCH_SIZE]
-            refined = await self._refine_batch(batch_lines, summary_context, entity_context)
+            refined = await self._refine_batch(
+                batch_lines, summary_context, entity_context
+            )
             if refined:
                 state.lines[batch_start : batch_start + len(refined)] = refined
 
@@ -46,9 +50,13 @@ class TranscriptRefinerAgent:
 
         context_block = ""
         if summary_context:
-            context_block += f"### Summary of the full conversation\n{summary_context}\n\n"
+            context_block += (
+                f"### Summary of the full conversation\n{summary_context}\n\n"
+            )
         if entity_context:
-            context_block += f"### Known entities (people, places, terms)\n{entity_context}\n\n"
+            context_block += (
+                f"### Known entities (people, places, terms)\n{entity_context}\n\n"
+            )
 
         prompt = (
             f"{context_block}"

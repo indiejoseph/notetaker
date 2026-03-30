@@ -53,7 +53,7 @@ Entities are extracted and categorized.
     pip install -r requirements.txt
     ```
 2.  **Set Environment Variables**:
-    Create a [.env](file:///Users/josephcheng/Projects/notetaking/.env) file with `QWEN_API_KEY`, `QWEN_BASE_URL`, and `QWEN_MODEL`.
+    Create a [.env](file:///Users/josephcheng/Projects/notetaking/.env) file with `QWEN_OMNI_API_KEY`, `QWEN_OMNI_BASE_URL`, and `QWEN_OMNI_MODEL`.
 3.  **Run the App**:
     ```bash
     python app.py

@@ -7,3 +7,7 @@ dashscope
 python-dotenv
 numpy
 scipy
+speechbrain
+torch
+torchaudio==2.8.0
+onnxruntime

@@ -8,6 +8,7 @@ from agents.entities_extractor import EntityExtractorAgent
 from agents.refiner import TranscriptRefinerAgent
 from core.state import TranscriptState
 
+
 class NotetakingPipeline:
     """
     Orchestrates the Transcriber, Summarizer, Entity Extractor, and Refiner agents.
@@ -54,7 +55,7 @@ class NotetakingPipeline:
 
         # Chunk audio into 20ms frames (LiveKit standard)
         samples_per_frame = int(sample_rate * 0.02)
-        
+
         async def frame_gen():
             for i in range(0, len(audio_data), samples_per_frame):
                 chunk = audio_data[i : i + samples_per_frame]

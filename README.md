@@ -63,9 +63,12 @@ pip install -r requirements.txt
 Create a `.env` file:
 
 ```env
-QWEN_BASE_URL=http://<host>/v1
-QWEN_API_KEY=sk-...
-QWEN_MODEL=qwen3-omni
+QWEN_OMNI_BASE_URL=http://<host>/v1
+QWEN_OMNI_API_KEY=sk-...
+QWEN_OMNI_MODEL=qwen3-omni
+QWEN_ASR_URL=https://api.winrex-ai.com/v1
+QWEN_ASR_API_KEY=sk-...
+QWEN_ASR_MODEL=Qwen/Qwen3-ASR-1.7B
 ```
 
 ## Usage
