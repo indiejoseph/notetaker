@@ -6,35 +6,37 @@ from pipeline import NotetakingPipeline
 
 load_dotenv()
 
+
 async def transcribe_generator(audio_path):
     if not audio_path:
         yield "No audio provided.", "Please upload or record audio first.", "Please upload or record audio first."
         return
-        
+
     print(f"Processing audio: {audio_path}")
     pipeline = NotetakingPipeline()
-    
+
     # Run the pipeline in the background
     pipeline_task = asyncio.create_task(pipeline.process_file(audio_path))
-    
+
     # While the pipeline is running, yield snapshots of the state
     while not pipeline_task.done():
         transcript = pipeline.state.get_transcript_snapshot()
         summary = pipeline.state.get_summary_snapshot()
         entities = pipeline.state.get_entity_snapshot()
-        
+
         yield transcript, summary, entities
-        await asyncio.sleep(0.5) # Refresh rate for UI
-    
+        await asyncio.sleep(0.5)  # Refresh rate for UI
+
     # Wait for any final results
     await pipeline_task
-    
+
     # Final yield
     yield (
         pipeline.state.get_transcript_snapshot(),
         pipeline.state.get_summary_snapshot(),
-        pipeline.state.get_entity_snapshot()
+        pipeline.state.get_entity_snapshot(),
     )
+
 
 # Create Gradio UI with custom dark mode aesthetic
 css = """
@@ -72,25 +74,46 @@ h1 {
 
 with gr.Blocks(css=css, theme=gr.themes.Monochrome()) as demo:
     gr.Markdown("# 🎙️ Qwen Notetaker: Streaming Async Pipeline")
-    gr.Markdown("Record or upload audio to generate smart notes using standalone Qwen3-Omni ASR and Silero VAD.")
-    
+    gr.Markdown(
+        "Record or upload audio to generate smart notes using standalone Qwen3-Omni ASR and Silero VAD."
+    )
+
     with gr.Row():
         with gr.Column(scale=1):
-            audio_input = gr.Audio(type="filepath", label="Upload or Record File", value=None, format="wav")
-            submit_btn = gr.Button("Generate Notes", variant="primary", elem_classes="btn-primary")
-            
+            audio_input = gr.Audio(
+                type="filepath", label="Upload or Record File", value=None, format="wav"
+            )
+            submit_btn = gr.Button(
+                "Generate Notes", variant="primary", elem_classes="btn-primary"
+            )
+
         with gr.Column(scale=1):
-            transcription_box = gr.Textbox(label="Transcription (Timestamped)", lines=10, placeholder="Transcription will appear here...")
-            summary_box = gr.Textbox(label="Incremental Summaries", lines=10, placeholder="Summaries will appear here...")
-            entities_box = gr.Textbox(label="Extracted Entities", lines=10, placeholder="Entities will appear here...")
-            
+            transcription_box = gr.Textbox(
+                label="Transcription (Timestamped)",
+                lines=10,
+                placeholder="Transcription will appear here...",
+            )
+            summary_box = gr.Textbox(
+                label="Incremental Summaries",
+                lines=10,
+                placeholder="Summaries will appear here...",
+            )
+            entities_box = gr.Textbox(
+                label="Extracted Entities",
+                lines=10,
+                placeholder="Entities will appear here...",
+            )
+
     submit_btn.click(
         fn=transcribe_generator,
         inputs=[audio_input],
-        outputs=[transcription_box, summary_box, entities_box]
+        outputs=[transcription_box, summary_box, entities_box],
     )
-    
+
 if __name__ == "__main__":
     if not os.environ.get("DASHSCOPE_API_KEY") and not os.environ.get("QWEN_API_KEY"):
         print("Warning: API Keys not set in environment.")
-    demo.launch(server_name="127.0.0.1", server_port=7860)
+    demo.launch(
+        server_name=os.environ.get("HOST", "0.0.0.0"),
+        server_port=int(os.environ.get("PORT", 7860)),
+    )
