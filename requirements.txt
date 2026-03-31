@@ -11,3 +11,4 @@ speechbrain
 torch
 torchaudio==2.8.0
 onnxruntime
+huggingface_hub<0.24
