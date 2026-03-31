@@ -50,13 +50,30 @@ flowchart TD
 | `app.py` | Gradio web UI, entry point |
 | `pipeline.py` | Orchestrates all agents, drives the end-to-end flow |
 | `core/state.py` | `TranscriptState` — shared store, timestamp-sorted insertion, 5-line trigger, speaker tracking |
-| `agents/transcriber.py` | Silero VAD → Qwen3-Omni ASR + speaker diarization, self-contained with context prompt |
-| `agents/speaker_diarizer.py` | SpeechBrain ECAPA-TDNN speaker embedding extraction & clustering |
+| `agents/transcriber.py` | Silero VAD → Qwen3-Omni ASR; includes integrated speaker diarization (SpeechBrain ECAPA-TDNN) and context prompt |
 | `agents/summarizer.py` | Incremental LLM summarization + `finalize()` for final summary |
 | `agents/entities_extractor.py` | Incremental LLM entity extraction |
 | `agents/refiner.py` | Post-processing refinement pass in batches of 10 |
 
 ## Installation
+
+## Prerequisites
+
+- **Python:** 3.10+ (3.11 recommended).
+- **Virtual environment (recommended):** create and activate before installing dependencies.
+
+```bash
+# create venv
+python -m venv .venv
+# activate (macOS / Linux)
+source .venv/bin/activate
+# install dependencies
+pip install -r requirements.txt
+```
+
+- **Environment variables:** create a `.env` file with your API keys and model endpoints (see the `.env` example in this README).
+- **Optional (GPU):** install appropriate CUDA/cuDNN drivers if you plan to run models on GPU.
+- **Note:** The SpeechBrain ECAPA-TDNN speaker embedding model (~260MB) is downloaded automatically on first run.
 
 ```bash
 pip install -r requirements.txt
@@ -68,7 +85,7 @@ Create a `.env` file:
 QWEN_OMNI_BASE_URL=http://<host>/v1
 QWEN_OMNI_API_KEY=sk-...
 QWEN_OMNI_MODEL=qwen3-omni
-QWEN_ASR_URL=https://api.winrex-ai.com/v1
+QWEN_ASR_URL=http://<host>/v1
 QWEN_ASR_API_KEY=sk-...
 QWEN_ASR_MODEL=Qwen/Qwen3-ASR-1.7B
 
