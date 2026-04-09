@@ -20,10 +20,14 @@ class TranscriberAgent:
     Self-contained — no external STT adapter needed.
     """
 
-    def __init__(self):
+    SYSTEM_PROMPT = (
+        "你是一個粵語語音辨識助手。音訊內容為廣東話（粵語）。"
+        "請將語音準確轉錄為繁體中文文字，保留粵語口語用詞。"
+        "只輸出轉錄文字，不要加任何解釋或標點符號以外的內容。"
+    )
+
+    def __init__(self, max_speakers: int = 0):
         self._vad = silero.VAD.load()
-        self._model = os.environ.get("QWEN_OMNI_MODEL", "qwen3-omni")
-        # Optional dedicated ASR endpoint (preferred if configured)
         self._asr_base = os.environ.get("QWEN_ASR_URL")
         self._asr_api_key = os.environ.get("QWEN_ASR_API_KEY")
         self._asr_model = os.environ.get("QWEN_ASR_MODEL")
@@ -32,7 +36,9 @@ class TranscriberAgent:
             base_url=self._asr_base,
         )
         # Initialize speaker diarizer (PyTorch version)
-        self._speaker_diarizer = SpeakerDiarizer()
+        self._speaker_diarizer = SpeakerDiarizer(max_speakers=max_speakers)
+        # Store recent message pairs for ASR context (last 4 turns)
+        self._message_history: list[dict] = []
 
     async def run(
         self, audio_source: AsyncIterator[rtc.AudioFrame], state: TranscriptState
@@ -60,26 +66,8 @@ class TranscriberAgent:
                         f"[TranscriberAgent] END_OF_SPEECH, speech started at {speech_start:.2f}s"
                     )
 
-                    context_parts = []
-                    if state.lines:
-                        recent = "\n".join(state.lines[-5:])
-                        context_parts.append(f"Recent conversation:\n{recent}")
-                    if state.summaries:
-                        context_parts.append(
-                            f"Recent summary:\n{state.summaries[-1][1]}"
-                        )
-                    if state.entities:
-                        # Merge all entity batches so even early batches contribute
-                        all_entities = "\n---\n".join(
-                            text for _, text in state.entities
-                        )
-                        context_parts.append(f"Known entities:\n{all_entities}")
-                    prompt = "\n\n".join(context_parts)
-
                     task = asyncio.create_task(
-                        self._transcribe_and_add(
-                            event.frames, state, speech_start, prompt
-                        )
+                        self._transcribe_and_add(event.frames, state, speech_start)
                     )
                     pending_transcriptions.append(task)
 
@@ -116,7 +104,6 @@ class TranscriberAgent:
         frames: list[rtc.AudioFrame],
         state: TranscriptState,
         timestamp: float,
-        prompt: str,
     ):
         """
         Converts speech frames to WAV, extracts speaker ID, sends to Qwen3-Omni, and stores the result.
@@ -145,42 +132,20 @@ class TranscriberAgent:
                 audio_b64 = base64.b64encode(f.read()).decode("utf-8")
             os.remove(tmp_path)
 
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "audio_url",
-                            "audio_url": {"url": f"data:audio/wav;base64,{audio_b64}"},
-                        }
-                    ],
-                }
-            ]
-
-            messages: list[dict] = []
-
-            if prompt:
-                messages.append(
+            user_msg = {
+                "role": "user",
+                "content": [
                     {
-                        "role": "user",
-                        "content": (
-                            f"Context from prior transcription session:\n{prompt}\n\n"
-                            "Use this context to improve accuracy. Now transcribe the audio below."
-                        ),
+                        "type": "audio_url",
+                        "audio_url": {"url": f"data:audio/wav;base64,{audio_b64}"},
                     }
-                )
+                ],
+            }
 
-            messages.append(
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "audio_url",
-                            "audio_url": {"url": f"data:audio/wav;base64,{audio_b64}"},
-                        }
-                    ],
-                }
-            )
+            # Build messages: system + last 4 history turns + current audio
+            messages = [{"role": "system", "content": self.SYSTEM_PROMPT}]
+            messages.extend(self._message_history)
+            messages.append(user_msg)
 
             try:
                 response = await self._client.chat.completions.create(
@@ -201,6 +166,12 @@ class TranscriberAgent:
                         # try common keys
                         text = response.get("text") or response.get("data")
             if text and text.lower().strip() != "none" and text.strip():
+                # Append this turn to history (keep last 4 pairs)
+                self._message_history.append(user_msg)
+                self._message_history.append({"role": "assistant", "content": text.strip()})
+                if len(self._message_history) > 8:  # 4 pairs × 2 messages
+                    self._message_history = self._message_history[-8:]
+
                 await state.add_line(text.strip(), timestamp, speaker_id)
                 print(
                     f"[TranscriberAgent] [{state.format_timestamp(timestamp)}](speaker {speaker_id}) {text.strip()}"

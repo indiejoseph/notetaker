@@ -1,6 +1,8 @@
 import asyncio
 import numpy as np
 import scipy.io.wavfile as wavfile
+from scipy.signal import resample_poly
+from math import gcd
 from livekit import rtc
 from agents.transcriber import TranscriberAgent
 from agents.summarizer import SummarizerAgent
@@ -14,25 +16,13 @@ class NotetakingPipeline:
     Orchestrates the Transcriber, Summarizer, Entity Extractor, and Refiner agents.
     """
 
-    def __init__(self):
+    def __init__(self, max_speakers: int = 0):
         print("[Pipeline] Initializing...")
         self.state = TranscriptState()
-        self.transcriber = TranscriberAgent()
+        self.transcriber = TranscriberAgent(max_speakers=max_speakers)
         self.summarizer = SummarizerAgent()
         self.extractor = EntityExtractorAgent()
         self.refiner = TranscriptRefinerAgent()
-
-        # Connect state trigger to background workers
-        self.state.set_update_trigger(self._trigger_background_tasks)
-
-    async def _trigger_background_tasks(self, state: TranscriptState):
-        """
-        Runs summarizer and extractor concurrently in the background.
-        """
-        print("[Pipeline] Triggering background tasks...")
-        # Create tasks but don't await them here to avoid blocking transcription
-        asyncio.create_task(self.summarizer.run(state))
-        asyncio.create_task(self.extractor.run(state))
 
     async def process_file(self, wav_path: str):
         """
@@ -49,9 +39,25 @@ class NotetakingPipeline:
         if len(audio_data.shape) > 1:
             audio_data = audio_data.mean(axis=1)
 
-        # Normalize to int16 if needed
-        if audio_data.dtype != np.int16:
-            audio_data = (audio_data * 32767).astype(np.int16)
+        # Normalize to int16
+        if np.issubdtype(audio_data.dtype, np.floating):
+            max_val = np.max(np.abs(audio_data))
+            if max_val > 1.0:
+                # Float values in int16 range (e.g. from .mean() on int16 data)
+                audio_data = np.clip(audio_data, -32768, 32767).astype(np.int16)
+            else:
+                # Float values in [-1, 1] range (e.g. from float WAV)
+                audio_data = (audio_data * 32767).astype(np.int16)
+        elif audio_data.dtype != np.int16:
+            audio_data = audio_data.astype(np.int16)
+
+        # Resample to 16kHz if needed (Silero VAD and Qwen ASR expect 16kHz)
+        target_rate = 16000
+        if sample_rate != target_rate:
+            print(f"[Pipeline] Resampling from {sample_rate}Hz to {target_rate}Hz")
+            g = gcd(sample_rate, target_rate)
+            audio_data = resample_poly(audio_data, target_rate // g, sample_rate // g).astype(np.int16)
+            sample_rate = target_rate
 
         # Chunk audio into 20ms frames (LiveKit standard)
         samples_per_frame = int(sample_rate * 0.02)
@@ -68,21 +74,17 @@ class NotetakingPipeline:
                     samples_per_channel=len(chunk),
                 )
 
-        # Run transcriber
+        # 1. Transcriber
         await self.transcriber.run(frame_gen(), self.state)
 
-        # Wait for summarizer and extractor to finish all pending batches
-        while (
-            len(self.state.lines) > self.state.summary_processed
-            or len(self.state.lines) > self.state.entities_processed
-        ):
-            print("[Pipeline] Waiting for background tasks to catch up...")
-            await asyncio.sleep(0.5)
-
-        # Run final refinement pass now that summaries and entities are complete
+        # 2. Refiner
         await self.refiner.run(self.state)
 
-        # Generate consolidated final summary over the refined transcript
+        # 3. Summarizer
+        await self.summarizer.run(self.state)
         await self.summarizer.finalize(self.state)
+
+        # 4. Extractor
+        await self.extractor.run(self.state)
 
         print("[Pipeline] Finished processing file.")

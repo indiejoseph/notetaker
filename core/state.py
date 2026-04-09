@@ -18,13 +18,7 @@ class TranscriptState:
         self.summary_processed = 0
         self.entities_processed = 0
         self.final_summary: str = ""
-        self.on_update_trigger = None
-
-    def set_update_trigger(self, callback):
-        """
-        Register a callback to be triggered when new content is added.
-        """
-        self.on_update_trigger = callback
+        self.status: str = ""
 
     async def add_line(self, text: str, timestamp: float, speaker_id: int = -1):
         """
@@ -43,13 +37,6 @@ class TranscriptState:
         self.line_timestamps.insert(idx, timestamp)
         self.lines.insert(idx, text)
         self.line_speakers.insert(idx, speaker_id)
-
-        # Trigger incremental summary/entities every 5 lines
-        if len(self.lines) % 5 == 0 and self.on_update_trigger:
-            print(
-                f"[TranscriptState] Triggering background updates at line {len(self.lines)}"
-            )
-            asyncio.create_task(self.on_update_trigger(self))
 
     def get_transcript_snapshot(self, add_speaker: bool = True) -> str:
         """

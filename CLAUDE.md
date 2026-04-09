@@ -42,9 +42,9 @@ Audio Input → NotetakingPipeline → TranscriberAgent (VAD + STT)
 Credentials and model endpoint live in `.env`:
 
 ```env
-QWEN_OMNI_BASE_URL="http://<host>/v1"   # Qwen3-Omni OpenAI-compatible endpoint
-QWEN_OMNI_API_KEY="sk-..."
-QWEN_OMNI_MODEL="qwen3-omni"
+LLM_BASE_URL="http://<host>/v1"   # Qwen3-Omni OpenAI-compatible endpoint
+LLM_API_KEY="sk-..."
+LLM_MODEL="qwen3-omni"
 QWEN_ASR_URL="http://<host>/v1"   # Qwen ASR endpoint
 QWEN_ASR_API_KEY="sk-..."
 QWEN_ASR_MODEL="Qwen/Qwen3-ASR-1.7B"

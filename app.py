@@ -7,13 +7,13 @@ from pipeline import NotetakingPipeline
 load_dotenv()
 
 
-async def transcribe_generator(audio_path):
+async def transcribe_generator(audio_path, max_speakers):
     if not audio_path:
-        yield "No audio provided.", "Please upload or record audio first.", "Please upload or record audio first."
+        yield "No audio provided.", "Please upload or record audio first.", "Please upload or record audio first.", ""
         return
 
-    print(f"Processing audio: {audio_path}")
-    pipeline = NotetakingPipeline()
+    print(f"Processing audio: {audio_path}, max_speakers={max_speakers}")
+    pipeline = NotetakingPipeline(max_speakers=int(max_speakers))
 
     # Run the pipeline in the background
     pipeline_task = asyncio.create_task(pipeline.process_file(audio_path))
@@ -23,8 +23,9 @@ async def transcribe_generator(audio_path):
         transcript = pipeline.state.get_transcript_snapshot()
         summary = pipeline.state.get_summary_snapshot()
         entities = pipeline.state.get_entity_snapshot()
+        status = pipeline.state.status or "Transcribing..."
 
-        yield transcript, summary, entities
+        yield transcript, summary, entities, status
         await asyncio.sleep(0.5)  # Refresh rate for UI
 
     # Wait for any final results
@@ -35,6 +36,7 @@ async def transcribe_generator(audio_path):
         pipeline.state.get_transcript_snapshot(),
         pipeline.state.get_summary_snapshot(),
         pipeline.state.get_entity_snapshot(),
+        "Done",
     )
 
 
@@ -83,8 +85,19 @@ with gr.Blocks(css=css, theme=gr.themes.Monochrome()) as demo:
             audio_input = gr.Audio(
                 type="filepath", label="Upload or Record File", value=None, format="wav"
             )
+            max_speakers_input = gr.Number(
+                label="Max Speakers (0 = unlimited)",
+                value=2,
+                minimum=0,
+                precision=0,
+            )
             submit_btn = gr.Button(
                 "Generate Notes", variant="primary", elem_classes="btn-primary"
+            )
+            status_box = gr.Textbox(
+                label="Status",
+                lines=1,
+                interactive=False,
             )
 
         with gr.Column(scale=1):
@@ -106,12 +119,12 @@ with gr.Blocks(css=css, theme=gr.themes.Monochrome()) as demo:
 
     submit_btn.click(
         fn=transcribe_generator,
-        inputs=[audio_input],
-        outputs=[transcription_box, summary_box, entities_box],
+        inputs=[audio_input, max_speakers_input],
+        outputs=[transcription_box, summary_box, entities_box, status_box],
     )
 
 if __name__ == "__main__":
-    if not os.environ.get("DASHSCOPE_API_KEY") and not os.environ.get("QWEN_API_KEY"):
+    if not os.environ.get("LLM_API_KEY") and not os.environ.get("QWEN_API_KEY"):
         print("Warning: API Keys not set in environment.")
     demo.launch(
         server_name=os.environ.get("HOST", "0.0.0.0"),

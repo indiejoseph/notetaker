@@ -9,8 +9,8 @@ load_dotenv()
 
 async def main():
     client = AsyncOpenAI(
-        api_key=os.environ.get("QWEN_OMNI_API_KEY", "sk-xxx"),
-        base_url=os.environ.get("QWEN_OMNI_BASE_URL"),
+        api_key=os.environ.get("LLM_API_KEY", "sk-xxx"),
+        base_url=os.environ.get("LLM_BASE_URL"),
     )
 
     # create dummy wav

@@ -2,7 +2,6 @@ import os
 import numpy as np
 import torch
 from scipy.spatial.distance import cosine
-from speechbrain.pretrained import EncoderClassifier
 
 
 class SpeakerDiarizer:
@@ -15,6 +14,7 @@ class SpeakerDiarizer:
         self,
         model_source: str = "speechbrain/spkrec-ecapa-voxceleb",
         embedding_threshold: float = None,
+        max_speakers: int = 0,
     ):
         """
         Initialize the speaker diarizer.
@@ -25,7 +25,11 @@ class SpeakerDiarizer:
                 - Lower values (0.3-0.5): Stricter matching, creates MORE separate speakers
                 - Higher values (0.6-0.8): Lenient matching, groups MORE speakers together
                 - Default: 0.5 or from SPEAKER_EMBEDDING_THRESHOLD env var
+            max_speakers: Maximum number of speakers to detect (0 = unlimited).
+                When the limit is reached, new segments are assigned to the closest
+                existing speaker regardless of distance.
         """
+        from speechbrain.pretrained import EncoderClassifier
         self.classifier = EncoderClassifier.from_hparams(
             source=model_source,
             savedir="./pretrained_models/spkrec-ecapa-voxceleb",
@@ -34,6 +38,7 @@ class SpeakerDiarizer:
             []
         )  # [(speaker_id, embedding)]
         self.next_speaker_id = 1
+        self.max_speakers = max_speakers
 
         # Get threshold from parameter, environment, or default
         if embedding_threshold is not None:
@@ -44,7 +49,7 @@ class SpeakerDiarizer:
             )
 
         print(
-            f"[SpeakerDiarizer] Initialized with embedding_threshold={self.embedding_threshold}"
+            f"[SpeakerDiarizer] Initialized with embedding_threshold={self.embedding_threshold}, max_speakers={self.max_speakers}"
         )
 
     async def get_speaker_id(self, audio_frames: list) -> int:
@@ -138,8 +143,9 @@ class SpeakerDiarizer:
                 print(f"[SpeakerDiarizer] Error computing cosine distance: {e}")
                 continue
 
-        # If close enough to existing speaker, return that ID
-        if min_distance <= self.embedding_threshold:
+        # If close enough to existing speaker, or max speakers reached, assign to closest
+        at_limit = self.max_speakers > 0 and len(self.speaker_embeddings) >= self.max_speakers
+        if min_distance <= self.embedding_threshold or at_limit:
             # Update stored embedding with average (optional smoothing)
             for i, (sid, stored_emb) in enumerate(self.speaker_embeddings):
                 if sid == matched_speaker_id:
@@ -147,9 +153,15 @@ class SpeakerDiarizer:
                     updated_emb = updated_emb / (np.linalg.norm(updated_emb) + 1e-8)
                     self.speaker_embeddings[i] = (sid, updated_emb)
                     break
-            print(
-                f"[SpeakerDiarizer] Matched existing speaker {matched_speaker_id} (distance: {min_distance:.3f})"
-            )
+            if at_limit and min_distance > self.embedding_threshold:
+                print(
+                    f"[SpeakerDiarizer] Max speakers ({self.max_speakers}) reached, "
+                    f"forcing match to speaker {matched_speaker_id} (distance: {min_distance:.3f})"
+                )
+            else:
+                print(
+                    f"[SpeakerDiarizer] Matched existing speaker {matched_speaker_id} (distance: {min_distance:.3f})"
+                )
             return matched_speaker_id
 
         # New speaker
