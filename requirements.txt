@@ -12,3 +12,4 @@ torch
 torchaudio==2.8.0
 onnxruntime
 huggingface-hub
+pydub

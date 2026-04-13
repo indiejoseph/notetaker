@@ -83,7 +83,7 @@ with gr.Blocks(css=css, theme=gr.themes.Monochrome()) as demo:
     with gr.Row():
         with gr.Column(scale=1):
             audio_input = gr.Audio(
-                type="filepath", label="Upload or Record File", value=None, format="wav"
+                type="filepath", label="Upload or Record File", value=None, format="mp3"
             )
             max_speakers_input = gr.Number(
                 label="Max Speakers (0 = unlimited)",
