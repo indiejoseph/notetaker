@@ -166,9 +166,14 @@ class TranscriberAgent:
                         # try common keys
                         text = response.get("text") or response.get("data")
             if text and text.lower().strip() != "none" and text.strip():
-                # Append this turn to history (keep last 4 pairs)
-                self._message_history.append(user_msg)
-                self._message_history.append({"role": "assistant", "content": text.strip()})
+                # Append this turn to history (keep last 4 pairs - text only, no audio)
+                # DO NOT append user_msg with audio to history - only the transcribed text
+                self._message_history.append(
+                    {"role": "user", "content": f"Audio transcription: {text.strip()}"}
+                )
+                self._message_history.append(
+                    {"role": "assistant", "content": text.strip()}
+                )
                 if len(self._message_history) > 8:  # 4 pairs × 2 messages
                     self._message_history = self._message_history[-8:]
 
