@@ -1,0 +1,17 @@
+services:
+  notetaking:
+    build: .
+    ports:
+      - "7860:7860"
+    env_file:
+      - .env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=7860
+    volumes:
+      - gradio_tmp:/tmp
+      - ./pretrained_models:/app/pretrained_models
+    restart: unless-stopped
+
+volumes:
+  gradio_tmp:
