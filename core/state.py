@@ -12,7 +12,7 @@ class TranscriptState:
         self.lines: list[str] = []
         self.line_timestamps: list[float] = []
         self.line_speakers: list[int] = []  # Speaker ID for each line
-        self.summaries: list[tuple[str, str]] = []  # (timestamp, text)
+        self.summaries: list[dict] = []  # [{timestamp, window_start, window_end, text}]
         self.entities: list[tuple[str, str]] = []  # (timestamp, text)
 
         self.summary_processed = 0
@@ -62,9 +62,15 @@ class TranscriptState:
 
     def get_summary_snapshot(self) -> str:
         """
-        Returns all summaries concatenated.
+        Returns all rolling summaries concatenated.
         """
-        return "\n\n".join([f"Summary at {ts}:\n{text}" for ts, text in self.summaries])
+        if not self.summaries:
+            return ""
+        result = []
+        for summary in self.summaries:
+            window_info = f"(lines {summary['window_start']+1}-{summary['window_end']})"
+            result.append(f"[{summary['timestamp']}] {window_info}:\n{summary['text']}")
+        return "\n\n".join(result)
 
     def get_entity_snapshot(self) -> str:
         """

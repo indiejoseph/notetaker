@@ -27,7 +27,7 @@ class TranscriptRefinerAgent:
         entity_context = state.get_entity_snapshot()
 
         print(
-            f"[RefinerAgent] Refining {len(state.lines)} lines in batches of {BATCH_SIZE}..."
+            f"[RefinerAgent] Refining {len(state.lines)} lines in batches of {min(BATCH_SIZE, len(state.lines))}..."
         )
 
         total_batches = (len(state.lines) + BATCH_SIZE - 1) // BATCH_SIZE
