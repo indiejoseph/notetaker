@@ -13,6 +13,8 @@ class SummarizerAgent:
 
     # Rolling window size: max lines per summary batch
     WINDOW_SIZE = 50
+    # How many previous rolling summaries to include as context
+    PRIOR_SUMMARIES = 3
 
     def __init__(self):
         self._lock = asyncio.Lock()
@@ -58,7 +60,21 @@ class SummarizerAgent:
                 state.line_timestamps[current_line_count - 1]
             )
 
-            user_content = f"請用繁體中文摘要以下逐字稿片段（共 {current_line_count - window_start} 行）：\n\n{window_transcript}"
+            # Include the last PRIOR_SUMMARIES rolling summaries as context, if available
+            prior_count = min(self.PRIOR_SUMMARIES, len(state.summaries))
+            if prior_count > 0:
+                prior_snippets = []
+                for s in state.summaries[-prior_count:]:
+                    prior_snippets.append(
+                        f"時間: {s['timestamp']} (行 {s['window_start']+1}-{s['window_end']}):\n{s['text']}"
+                    )
+                prior_text = "\n\n".join(prior_snippets)
+                user_content = (
+                    f"以下為最近 {prior_count} 段階段性摘要，請參考以保持摘要連貫性：\n\n{prior_text}\n\n"
+                    f"請用繁體中文摘要以下逐字稿片段（共 {current_line_count - window_start} 行）：\n\n{window_transcript}"
+                )
+            else:
+                user_content = f"請用繁體中文摘要以下逐字稿片段（共 {current_line_count - window_start} 行）：\n\n{window_transcript}"
 
             chat_ctx = llm.ChatContext()
             chat_ctx.add_message(role="system", content=self.instructions)
