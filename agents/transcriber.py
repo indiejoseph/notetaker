@@ -26,8 +26,8 @@ class TranscriberAgent:
         "只輸出轉錄文字，不要加任何解釋或標點符號以外的內容。"
     )
 
-    def __init__(self, max_speakers: int = 0):
-        self._vad = silero.VAD.load()
+    def __init__(self, max_speakers: int = 0, silence_duration: float = 0.35):
+        self._vad = silero.VAD.load(min_silence_duration=silence_duration)
         self._asr_base = os.environ.get("QWEN_ASR_URL")
         self._asr_api_key = os.environ.get("QWEN_ASR_API_KEY")
         self._asr_model = os.environ.get("QWEN_ASR_MODEL")
@@ -39,6 +39,7 @@ class TranscriberAgent:
         self._speaker_diarizer = SpeakerDiarizer(max_speakers=max_speakers)
         # Store recent message pairs for ASR context (last 4 turns)
         self._message_history: list[dict] = []
+        self._silence_duration = silence_duration
 
     async def run(
         self, audio_source: AsyncIterator[rtc.AudioFrame], state: TranscriptState
@@ -81,8 +82,7 @@ class TranscriberAgent:
                 await asyncio.sleep(0)
 
             # Append silence to flush any speech that hasn't seen enough trailing silence.
-            # Default min_silence_duration is 0.55s; we push 0.7s to be safe.
-            silence_samples = int(0.7 * last_sample_rate)
+            silence_samples = int(self._silence_duration * last_sample_rate)
             vad_stream.push_frame(
                 rtc.AudioFrame(
                     data=bytes(silence_samples * 2),
@@ -114,8 +114,10 @@ class TranscriberAgent:
             for frame in frames:
                 audio_data.extend(np.frombuffer(frame.data, dtype=np.int16).tobytes())
 
-            # Extract speaker embedding
-            speaker_id = await self._speaker_diarizer.get_speaker_id(frames)
+            # Extract speaker embedding, primary distance, and per-speaker distances
+            speaker_id, speaker_distance, speaker_distances = (
+                await self._speaker_diarizer.get_speaker_id(frames)
+            )
 
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
                 tmp_path = tmp_file.name
@@ -125,8 +127,14 @@ class TranscriberAgent:
                     wav_file.setframerate(sample_rate)
                     wav_file.writeframes(audio_data)
 
+            # Format per-speaker distances for logging (e.g., "1:0.123, 2:0.876")
+            per_speaker_str = (
+                ", ".join(f"{sid}:{dist:.3f}" for sid, dist in speaker_distances)
+                if speaker_distances
+                else ""
+            )
             print(
-                f"[TranscriberAgent] Sending {len(audio_data)} bytes to ASR endpoint at {timestamp:.2f}s (speaker {speaker_id})"
+                f"[TranscriberAgent] Sending {len(audio_data)} bytes to ASR endpoint at {timestamp:.2f}s (speaker {speaker_id}, dist {speaker_distance:.3f}) {per_speaker_str}"
             )
             with open(tmp_path, "rb") as f:
                 audio_b64 = base64.b64encode(f.read()).decode("utf-8")
@@ -179,7 +187,7 @@ class TranscriberAgent:
 
                 await state.add_line(text.strip(), timestamp, speaker_id)
                 print(
-                    f"[TranscriberAgent] [{state.format_timestamp(timestamp)}](speaker {speaker_id}) {text.strip()}"
+                    f"[TranscriberAgent] [{state.format_timestamp(timestamp)}](speaker {speaker_id}, dist {speaker_distance:.3f}) {text.strip()} {per_speaker_str}"
                 )
 
         except Exception as e:
