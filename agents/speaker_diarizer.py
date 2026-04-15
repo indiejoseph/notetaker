@@ -2,6 +2,8 @@ import os
 import numpy as np
 import torch
 from scipy.spatial.distance import cosine
+from scipy.signal import resample_poly
+from math import gcd
 
 
 class SpeakerDiarizer:
@@ -30,6 +32,7 @@ class SpeakerDiarizer:
                 existing speaker regardless of distance.
         """
         from speechbrain.pretrained import EncoderClassifier
+
         self.classifier = EncoderClassifier.from_hparams(
             source=model_source,
             savedir="./pretrained_models/spkrec-ecapa-voxceleb",
@@ -63,25 +66,52 @@ class SpeakerDiarizer:
             Speaker ID (int)
         """
         try:
-            # Convert frames to numpy array
-            audio_data = bytearray()
-            sample_rate = audio_frames[0].sample_rate if audio_frames else 16000
 
-            for frame in audio_frames:
-                audio_data.extend(np.frombuffer(frame.data, dtype=np.int16))
+            # Convert frames to numpy int16 array (preserve raw bytes)
+            if not audio_frames:
+                print("[SpeakerDiarizer] No audio frames provided")
+                return -1
 
-            # Convert to torch tensor
-            audio_tensor = torch.from_numpy(
-                np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
+            sample_rate = (
+                audio_frames[0].sample_rate
+                if hasattr(audio_frames[0], "sample_rate")
+                else 16000
             )
-            audio_tensor = audio_tensor.unsqueeze(0)  # Add batch dimension
+            audio_bytes = bytearray()
+            for frame in audio_frames:
+                # frame.data is raw bytes; extend the buffer directly
+                audio_bytes.extend(frame.data)
 
-            # Normalize audio
-            audio_max = torch.max(torch.abs(audio_tensor))
-            if audio_max > 0:
-                audio_tensor = audio_tensor / audio_max
-            else:
-                audio_tensor = audio_tensor
+            if len(audio_bytes) == 0:
+                print("[SpeakerDiarizer] Empty audio buffer")
+                return -1
+
+            # Interpret bytes as int16 PCM
+            audio_int16 = np.frombuffer(bytes(audio_bytes), dtype=np.int16)
+
+            # Resample to 16kHz if needed (ECAPA models typically expect 16kHz)
+            target_sr = 16000
+            if sample_rate != target_sr and audio_int16.size > 0:
+                try:
+                    g = gcd(sample_rate, target_sr)
+                    up = target_sr // g
+                    down = sample_rate // g
+                    audio_int16 = resample_poly(audio_int16, up, down).astype(np.int16)
+                    sample_rate = target_sr
+                    print(
+                        f"[SpeakerDiarizer] Resampled audio to {target_sr}Hz (length={len(audio_int16)})"
+                    )
+                except Exception as e:
+                    print(f"[SpeakerDiarizer] Resampling failed: {e}")
+
+            # Convert to float32 in [-1, 1]
+            audio_float = audio_int16.astype(np.float32) / 32768.0
+            if audio_float.size == 0:
+                print("[SpeakerDiarizer] No audio after processing")
+                return -1
+
+            # Create tensor shape (batch, time)
+            audio_tensor = torch.from_numpy(audio_float).unsqueeze(0).to(torch.float32)
 
             # Extract embedding
             with torch.no_grad():
@@ -144,7 +174,9 @@ class SpeakerDiarizer:
                 continue
 
         # If close enough to existing speaker, or max speakers reached, assign to closest
-        at_limit = self.max_speakers > 0 and len(self.speaker_embeddings) >= self.max_speakers
+        at_limit = (
+            self.max_speakers > 0 and len(self.speaker_embeddings) >= self.max_speakers
+        )
         if min_distance <= self.embedding_threshold or at_limit:
             # Update stored embedding with average (optional smoothing)
             for i, (sid, stored_emb) in enumerate(self.speaker_embeddings):
