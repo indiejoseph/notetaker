@@ -38,7 +38,8 @@ class SpeakerDiarizer:
             source=model_source,
             savedir="./pretrained_models/spkrec-ecapa-voxceleb",
         )
-        # speaker_embeddings stores [speaker_id, centroid_embedding, count, duration]
+        # speaker_embeddings stores [speaker_id, centroid_embedding, count, max_duration_seen]
+        # centroid = embedding of the longest chunk from this speaker (most representative)
         self.speaker_embeddings: list[list] = []
         self.next_speaker_id = 1
         self.max_speakers = max_speakers
@@ -196,7 +197,7 @@ class SpeakerDiarizer:
             embedding = embedding / norm
 
         if not self.speaker_embeddings:
-            # First speaker: store centroid, count=1, duration
+            # First speaker: store centroid (this embedding), count=1, max_duration
             self.speaker_embeddings.append(
                 [self.next_speaker_id, embedding.copy(), 1, duration]
             )
@@ -217,7 +218,7 @@ class SpeakerDiarizer:
             speaker_id,
             stored_centroid,
             stored_count,
-            stored_duration,
+            stored_max_duration,
         ) in enumerate(self.speaker_embeddings):
             try:
                 distance = float(cosine(embedding, stored_centroid.flatten()))
@@ -235,32 +236,32 @@ class SpeakerDiarizer:
             self.max_speakers > 0 and len(self.speaker_embeddings) >= self.max_speakers
         )
         if min_distance <= self.embedding_threshold or at_limit:
-            # Update centroid embedding using running average if chunk is long enough
+            # Update centroid: use the longest chunk embedding as the representative
             if matched_idx is not None:
-                spk_id, stored_centroid, stored_count, stored_duration = (
+                spk_id, stored_centroid, stored_count, stored_max_duration = (
                     self.speaker_embeddings[matched_idx]
                 )
-                if duration >= self.min_chunk_duration:
-                    new_count = stored_count + 1
-                    new_centroid = (
-                        (stored_centroid * stored_count) + embedding
-                    ) / new_count
-                    # Re-normalize centroid
-                    nc_norm = np.linalg.norm(new_centroid) + 1e-8
-                    new_centroid = new_centroid / nc_norm
-                    self.speaker_embeddings[matched_idx] = [
-                        spk_id,
-                        new_centroid,
-                        new_count,
-                        duration,
-                    ]
+                new_count = stored_count + 1
+                # Only update centroid if this chunk is longer (more representative)
+                if duration > stored_max_duration:
+                    new_centroid = embedding.copy()
+                    new_max_duration = duration
                     print(
-                        f"[SpeakerDiarizer] Updated centroid for speaker {spk_id} (count={new_count}, duration={duration:.2f}s)"
+                        f"[SpeakerDiarizer] Updated centroid for speaker {spk_id} (count={new_count}, new longest chunk: {duration:.2f}s)"
                     )
                 else:
+                    new_centroid = stored_centroid
+                    new_max_duration = stored_max_duration
                     print(
-                        f"[SpeakerDiarizer] Matched existing speaker {matched_speaker_id} (distance: {min_distance:.3f}, kept centroid count={self.speaker_embeddings[matched_idx][2]})"
+                        f"[SpeakerDiarizer] Matched existing speaker {spk_id} (count={new_count}, distance: {min_distance:.3f})"
                     )
+
+                self.speaker_embeddings[matched_idx] = [
+                    spk_id,
+                    new_centroid,
+                    new_count,
+                    new_max_duration,
+                ]
 
             if at_limit and min_distance > self.embedding_threshold:
                 print(
@@ -276,6 +277,26 @@ class SpeakerDiarizer:
         # to the closest speaker instead of creating a new one to avoid
         # proliferation of short-noise clusters.
         if duration < self.min_chunk_duration and self.speaker_embeddings:
+            # Still update the centroid if this chunk is longer
+            if matched_idx is not None:
+                spk_id, stored_centroid, stored_count, stored_max_duration = (
+                    self.speaker_embeddings[matched_idx]
+                )
+                new_count = stored_count + 1
+                if duration > stored_max_duration:
+                    new_centroid = embedding.copy()
+                    new_max_duration = duration
+                else:
+                    new_centroid = stored_centroid
+                    new_max_duration = stored_max_duration
+
+                self.speaker_embeddings[matched_idx] = [
+                    spk_id,
+                    new_centroid,
+                    new_count,
+                    new_max_duration,
+                ]
+
             print(
                 f"[SpeakerDiarizer] Short chunk ({duration:.2f}s) - assigning to closest speaker {matched_speaker_id} (distance {min_distance:.3f})"
             )
